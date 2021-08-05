@@ -27,7 +27,7 @@ RUN apt-get update && \
     apt-get install -y build-essential git curl sudo python3 autoconf \
     ca-certificates cmake ninja-build python libjemalloc-dev automake \
     ssh python3-dev python3-distutils wget python3-pip vim nano bison \
-    gosu linux-tools-common linux-tools-`uname -r` && \
+    gosu linux-tools-common && \
     apt-get remove -y unattended-upgrades 
 
 # Download web tooling and node js
@@ -60,7 +60,7 @@ RUN cd /node/node-v16.5.0 && \
         --openssl-no-asm \
         --experimental-enable-pointer-compression && \
     make -j36 && make install && \
-    mkdir node && make install PREFIX=./node
+    mkdir node_thp_sbc && make install PREFIX=./node_thp_sbc
 
 # USE BOLTING
 ARG BOLT
@@ -83,7 +83,7 @@ RUN \
         ninja && \
         cd .. && gzip -d perf_node_v16.5.0.data.gz && \
         ./build/bin/llvm-bolt \
-            /node/node-v16.5.0/node/bin/node  \
+            /node/node-v16.5.0/node_thp_sbc/bin/node  \
             -o node.bolt \
             -p perf_node_v16.5.0.data \
             -reorder-blocks=cache+ \
@@ -96,10 +96,10 @@ RUN \
             -ignore-build-id && \
         cp /node/node.bolt /usr/local/bin/node ; \
     else \
-        cp /node/node-v16.5.0/node/bin/node /usr/local/bin/node ; \
+        cp /node/node-v16.5.0/node_thp_sbc/bin/node /usr/local/bin/node ; \
     fi
 
-RUN cp /node/node-v16.5.0/node/* /usr/local/ -r
+RUN cp /node/node-v16.5.0/node_thp_sbc/* /usr/local/ -r
 
 RUN cd /web-tooling-benchmark/ && npm install --unsafe-perm
 
