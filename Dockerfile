@@ -9,10 +9,13 @@ LABEL DOCKERFILE_VERSION="1.0"
 # Please set proxy according to your network environment
 # ENV http_proxy "http://proxy-chain.intel.com:911/"
 # ENV https_proxy "http://proxy-chain.intel.com:912/"
+<<<<<<< HEAD
 
 COPY 0001-Enables-Thansparent-hugepage-support-for-Node-js.patch /node/
 COPY 0002-Enable-shorten-builtin-calls-v8-optimization.patch /node/
 COPY perf_node_v16.5.0.data.gz /node/
+=======
+>>>>>>> 3c4e5b25cb04be1b79b454e508e4763d35af8bf1
 
 # URL for web tooling test
 ARG WEB_TOOLING_URL="https://github.com/v8/web-tooling-benchmark"
@@ -65,6 +68,7 @@ RUN cd /node/node-v16.5.0 && \
 # USE BOLTING
 ARG BOLT
 RUN \
+<<<<<<< HEAD
     if [ "$BOLT" = "True" ]; then \
         cd /node/ && git clone ${LLVM_URL} llvm && \
         cd llvm/tools &&\
@@ -102,6 +106,14 @@ RUN \
 RUN cp /node/node-v16.5.0/node/* /usr/local/ -r
 
 RUN cd /web-tooling-benchmark/ && npm install --unsafe-perm
+=======
+	if [ "$BOLT" = "True" ]; then \
+	    cd /web-tooling-benchmark && mkdir bin && \
+	    gzip -cd node.v14.thp.bolt.gz >bin/node && \
+	    chmod +x bin/node && \
+	    mv /usr/bin/node /usr/bin/node.v14.base && cp bin/node /usr/bin/ ; \
+	fi
+>>>>>>> 3c4e5b25cb04be1b79b454e508e4763d35af8bf1
 
 WORKDIR /web-tooling-benchmark
 
