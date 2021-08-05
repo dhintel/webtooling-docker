@@ -1,0 +1,145 @@
+From 4b15746d9e715452fe5507f93163e47045c07497 Mon Sep 17 00:00:00 2001
+From: Li Gang <gang.g.li@intel.com>
+Date: Sat, 24 Jul 2021 04:56:08 +0800
+Subject: [PATCH 1/2] Enables Thansparent hugepage support for Node js.
+
+ It adjusts V8 page size for performance reasons.
+ The main use case is improving Node.js performance.
+ Based on V8 patch: https://chromium-review.googlesource.com/c/v8/v8/+/2860840
+---
+ deps/v8/BUILD.gn                            |  6 ++++++
+ deps/v8/src/base/build_config.h             |  6 ++++++
+ deps/v8/src/base/platform/platform-posix.cc | 15 +++++++++++++++
+ deps/v8/src/heap/heap.h                     |  7 +++++++
+ deps/v8/src/heap/mark-compact.cc            |  2 +-
+ tools/v8_gypfiles/features.gypi             |  7 +++++++
+ 6 files changed, 42 insertions(+), 1 deletion(-)
+
+diff --git a/deps/v8/BUILD.gn b/deps/v8/BUILD.gn
+index d2bfb612..79096511 100644
+--- a/deps/v8/BUILD.gn
++++ b/deps/v8/BUILD.gn
+@@ -79,6 +79,9 @@ declare_args() {
+   # Sets -dENABLE_VTUNE_TRACEMARK.
+   v8_enable_vtunetracemark = false
+ 
++  # Sets -dENABLE_HUGEPAGE
++  v8_enable_hugepage = false
++
+   # Sets -dENABLE_HANDLE_ZAPPING.
+   v8_enable_handle_zapping = is_debug
+ 
+@@ -697,6 +700,9 @@ config("features") {
+   if (v8_enable_vtunetracemark) {
+     defines += [ "ENABLE_VTUNE_TRACEMARK" ]
+   }
++  if (v8_enable_hugepage) {
++    defines += [ "ENABLE_HUGEPAGE" ]
++  }
+   if (v8_enable_minor_mc) {
+     defines += [ "ENABLE_MINOR_MC" ]
+   }
+diff --git a/deps/v8/src/base/build_config.h b/deps/v8/src/base/build_config.h
+index 21db0b6e..26074720 100644
+--- a/deps/v8/src/base/build_config.h
++++ b/deps/v8/src/base/build_config.h
+@@ -223,6 +223,12 @@ constexpr int kReturnAddressStackSlotCount =
+ #if defined(V8_TARGET_ARCH_PPC) || defined(V8_TARGET_ARCH_PPC64)
+ // PPC has large (64KB) physical pages.
+ const int kPageSizeBits = 19;
++#elif defined(ENABLE_HUGEPAGE)
++// When enabling huge pages, adjust V8 page size to take up exactly one huge
++// page. This avoids huge-page-internal fragmentation for unused address ranges.
++const int kHugePageBits = 21;
++const int kHugePageSize = (1U) << kHugePageBits;
++const int kPageSizeBits = kHugePageBits;
+ #else
+ // Arm64 supports up to 64k OS pages on Linux, however 4k pages are more common
+ // so we keep the V8 page size at 256k. Nonetheless, we need to make sure we
+diff --git a/deps/v8/src/base/platform/platform-posix.cc b/deps/v8/src/base/platform/platform-posix.cc
+index ee787f7d..17743756 100644
+--- a/deps/v8/src/base/platform/platform-posix.cc
++++ b/deps/v8/src/base/platform/platform-posix.cc
+@@ -167,6 +167,21 @@ void* Allocate(void* hint, size_t size, OS::MemoryPermission access,
+   int flags = GetFlagsForMemoryPermission(access, page_type);
+   void* result = mmap(hint, size, prot, flags, kMmapFd, kMmapFdOffset);
+   if (result == MAP_FAILED) return nullptr;
++#if ENABLE_HUGEPAGE
++  if (result != nullptr && size >= kHugePageSize) {
++    const uintptr_t huge_start =
++        RoundUp(reinterpret_cast<uintptr_t>(result), kHugePageSize);
++    const uintptr_t huge_end =
++        RoundDown(reinterpret_cast<uintptr_t>(result) + size, kHugePageSize);
++    if (huge_end > huge_start) {
++      // Bail out in case the aligned addresses do not provide a block of at
++      // least kHugePageSize size.
++      madvise(reinterpret_cast<void*>(huge_start), huge_end - huge_start,
++              MADV_HUGEPAGE);
++    }
++  }
++#endif
++
+   return result;
+ }
+ 
+diff --git a/deps/v8/src/heap/heap.h b/deps/v8/src/heap/heap.h
+index 429f8864..87deb69f 100644
+--- a/deps/v8/src/heap/heap.h
++++ b/deps/v8/src/heap/heap.h
+@@ -379,8 +379,15 @@ class Heap {
+   static constexpr size_t kOldGenerationLowMemory =
+       128 * MB * kHeapLimitMultiplier;
+   static constexpr size_t kNewLargeObjectSpaceToSemiSpaceRatio = 1;
++#if ENABLE_HUGEPAGE
++  static constexpr size_t kMinSemiSpaceSize =
++      kHugePageSize * kPointerMultiplier;
++  static constexpr size_t kMaxSemiSpaceSize =
++      kHugePageSize * 16 * kPointerMultiplier;
++#else
+   static constexpr size_t kMinSemiSpaceSize = 512 * KB * kPointerMultiplier;
+   static constexpr size_t kMaxSemiSpaceSize = 8192 * KB * kPointerMultiplier;
++#endif
+ 
+   STATIC_ASSERT(kMinSemiSpaceSize % (1 << kPageSizeBits) == 0);
+   STATIC_ASSERT(kMaxSemiSpaceSize % (1 << kPageSizeBits) == 0);
+diff --git a/deps/v8/src/heap/mark-compact.cc b/deps/v8/src/heap/mark-compact.cc
+index 11c789d0..18f6ef84 100644
+--- a/deps/v8/src/heap/mark-compact.cc
++++ b/deps/v8/src/heap/mark-compact.cc
+@@ -3163,7 +3163,7 @@ class PageEvacuationJob : public v8::JobTask {
+   }
+ 
+   size_t GetMaxConcurrency(size_t worker_count) const override {
+-    const size_t kItemsPerWorker = MB / Page::kPageSize;
++    const size_t kItemsPerWorker = std::max(1, MB / Page::kPageSize);
+     // Ceiling division to ensure enough workers for all
+     // |remaining_evacuation_items_|
+     const size_t wanted_num_workers =
+diff --git a/tools/v8_gypfiles/features.gypi b/tools/v8_gypfiles/features.gypi
+index 97676305..9311de4a 100644
+--- a/tools/v8_gypfiles/features.gypi
++++ b/tools/v8_gypfiles/features.gypi
+@@ -230,6 +230,10 @@
+     # will not be available, and embedder APIs to generate WebAssembly modules
+     # will fail.
+     'v8_enable_webassembly%': 1,
++
++    # Enable THP for performance optimization.
++    'v8_enable_hugepage': 1,
++
+   },
+ 
+   'target_defaults': {
+@@ -305,6 +309,9 @@
+       },{
+         'defines!': ['V8_IMMINENT_DEPRECATION_WARNINGS',],
+       }],
++      ['v8_enable_hugepage==1', {
++        'defines': ['ENABLE_HUGEPAGE',],
++      }],
+       ['v8_enable_i18n_support==1', {
+         'defines': ['V8_INTL_SUPPORT',],
+       }],
+-- 
+2.25.1
+
