@@ -27,7 +27,7 @@ RUN apt-get update && \
     apt-get install -y build-essential git curl sudo python3 autoconf \
     ca-certificates cmake ninja-build python libjemalloc-dev automake \
     ssh python3-dev python3-distutils wget python3-pip vim nano bison \
-    gosu linux-tools-common && \
+    gosu linux-tools-common linux-tools-`uname -r` && \
     apt-get remove -y unattended-upgrades 
 
 # Download web tooling and node js
