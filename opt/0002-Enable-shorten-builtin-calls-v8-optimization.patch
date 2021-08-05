@@ -1,0 +1,27 @@
+From cc61b075dd44ef50e113118c1478a90b3c296208 Mon Sep 17 00:00:00 2001
+From: Li Gang <gang.g.li@intel.com>
+Date: Sat, 24 Jul 2021 09:52:26 +0800
+Subject: [PATCH 2/2] Enable shorten builtin calls v8 optimization.
+
+Enable pointer compression, to enable shorten builtin alls also.
+./configure --experimental-enable-pointer-compression
+---
+ common.gypi | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/common.gypi b/common.gypi
+index 71862791..305c684d 100644
+--- a/common.gypi
++++ b/common.gypi
+@@ -356,7 +356,7 @@
+         ],
+       }],
+       ['v8_enable_pointer_compression == 1', {
+-        'defines': ['V8_COMPRESS_POINTERS'],
++        'defines': ['V8_COMPRESS_POINTERS', 'V8_COMPRESS_POINTERS_IN_ISOLATE_CAGE', 'V8_SHORT_BUILTIN_CALLS'],
+       }],
+       ['v8_enable_pointer_compression == 1 or v8_enable_31bit_smis_on_64bit_arch == 1', {
+         'defines': ['V8_31BIT_SMIS_ON_64BIT_ARCH'],
+-- 
+2.25.1
+
