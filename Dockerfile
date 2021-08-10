@@ -30,7 +30,7 @@ ARG BOLT
 COPY node.v14.thp.bolt.gz /web-tooling-benchmark
 
 RUN \
-	if [ "$BOLT" = "True" ]; then \
+	if [ "$BOLT" = "True" ] || [ "$BOLT" = "1" ]; then \
 		cd /web-tooling-benchmark && mkdir bin && \
 	    gzip -cd node.v14.thp.bolt.gz >bin/node && \
 	    chmod +x bin/node && \
