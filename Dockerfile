@@ -39,4 +39,4 @@ RUN \
 
 WORKDIR /web-tooling-benchmark
 
-CMD ["node", "dist/cli.js"]
+#CMD ["node", "dist/cli.js"]
